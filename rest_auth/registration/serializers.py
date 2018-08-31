@@ -35,6 +35,8 @@ class SocialAccountSerializer(serializers.ModelSerializer):
 
 class SocialLoginSerializer(serializers.Serializer):
     access_token = serializers.CharField(required=False, allow_blank=True)
+    expires_in = serializers.IntegerField(required=False)
+    refresh_token = serializers.CharField(required=False, allow_blank=True)
     code = serializers.CharField(required=False, allow_blank=True)
 
     def _get_request(self):
@@ -77,9 +79,12 @@ class SocialLoginSerializer(serializers.Serializer):
         # More info on code vs access_token
         # http://stackoverflow.com/questions/8666316/facebook-oauth-2-0-code-and-token
 
+        oauth2_token = {}
         # Case 1: We received the access_token
         if attrs.get('access_token'):
-            access_token = attrs.get('access_token')
+            oauth2_token['access_token'] = attrs.get('access_token')
+            oauth2_token['expires_in'] = attrs.get('expires_in', '')
+            oauth2_token['refresh_token'] = attrs.get('refresh_token', '')
 
         # Case 2: We received the authorization code
         elif attrs.get('code'):
@@ -109,17 +114,19 @@ class SocialLoginSerializer(serializers.Serializer):
                 scope
             )
             token = client.get_access_token(code)
-            access_token = token['access_token']
+            oauth2_token['access_token'] = token['access_token']
 
         else:
             raise serializers.ValidationError(
                 _("Incorrect input. access_token or code is required."))
 
-        social_token = adapter.parse_token({'access_token': access_token})
+        social_token = adapter.parse_token(oauth2_token)
         social_token.app = app
 
         try:
-            login = self.get_social_login(adapter, app, social_token, access_token)
+            login = self.get_social_login(
+                adapter, app, social_token, oauth2_token['access_token']
+            )
             complete_social_login(request, login)
         except HTTPError:
             raise serializers.ValidationError(_("Incorrect value"))
